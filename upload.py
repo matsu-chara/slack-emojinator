@@ -19,6 +19,7 @@ except NameError:
 
 URL_CUSTOMIZE = "https://{team_name}.slack.com/customize/emoji"
 URL_ADD = "https://{team_name}.slack.com/api/emoji.add"
+URL_DELETE = "https://{team_name}.slack.com/api/emoji.remove"
 URL_LIST = "https://{team_name}.slack.com/api/emoji.adminList"
 
 API_TOKEN_REGEX = r"api_token: \"(.*)\","
@@ -32,6 +33,7 @@ def _session(args):
     session.headers = {'Cookie': args.cookie}
     session.url_customize = URL_CUSTOMIZE.format(team_name=args.team_name)
     session.url_add = URL_ADD.format(team_name=args.team_name)
+    session.url_delete = URL_DELETE.format(team_name=args.team_name)
     session.url_list = URL_LIST.format(team_name=args.team_name)
     session.api_token = _fetch_api_token(session)
     return session
@@ -62,6 +64,10 @@ def _argparse():
         default=os.getenv('EMOJI_NAME_SUFFIX', ''),
         help='Suffix to add to generated emoji name. '
         'Defaults to the $EMOJI_NAME_SUFFIX environment variable.'
+    )
+    parser.add_argument(
+        '--force', '-F', action='store_true',
+        help="Overwrites any existing emojis"
     )
     parser.add_argument(
         'slackmoji_files',
@@ -108,8 +114,14 @@ def main():
             args.suffix.strip()
         )
         if emoji_name in existing_emojis:
-            print("Skipping {}. Emoji already exists".format(emoji_name))
-            skipped += 1
+            if args.force:
+                delete_emoji(session, emoji_name)
+                upload_emoji(session, emoji_name, filename)
+                print("{} upload complete.".format(filename))
+                uploaded += 1
+            else:
+                print("Skipping {}. Emoji already exists".format(emoji_name))
+                skipped += 1
         else:
             upload_emoji(session, emoji_name, filename)
             print("{} upload complete.".format(filename))
@@ -154,6 +166,20 @@ def upload_emoji(session, emoji_name, filename):
     if not response_json['ok']:
         print("Error with uploading %s: %s" % (emoji_name, response_json))
 
+def delete_emoji(session, emoji_name):
+    data = {
+        'name': emoji_name,
+        'token': session.api_token
+    }
+    r = session.post(session.url_delete, data=data, allow_redirects=False)
+    r.raise_for_status()
+
+    # Slack returns 200 OK even if upload fails, so check for status.
+    response_json = r.json()
+    if not response_json['ok']:
+        print(r.content)
+        return False
+    return True
 
 if __name__ == '__main__':
     main()
