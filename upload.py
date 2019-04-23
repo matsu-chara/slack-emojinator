@@ -21,7 +21,7 @@ URL_CUSTOMIZE = "https://{team_name}.slack.com/customize/emoji"
 URL_ADD = "https://{team_name}.slack.com/api/emoji.add"
 URL_LIST = "https://{team_name}.slack.com/api/emoji.adminList"
 
-API_TOKEN_REGEX = r"api_token: \"(.*)\","
+API_TOKEN_REGEX = r"\"api_token\":\"(.*)\""
 API_TOKEN_PATTERN = re.compile(API_TOKEN_REGEX)
 
 
@@ -87,9 +87,10 @@ def _fetch_api_token(session):
     all_script = soup.findAll("script")
     for script in all_script:
         for line in script.text.splitlines():
-            if 'api_token' in line:
-                # api_token: "xoxs-12345-abcdefg....",
-                return API_TOKEN_PATTERN.match(line.strip()).group(1)
+            for l in line.split(","):
+                if 'api_token' in l:
+                    # "api_token":"xoxs-12345-abcdefg...."
+                    return API_TOKEN_PATTERN.match(l.strip()).group(1)
 
     raise Exception('api_token not found. response status={}'.format(r.status_code))
 
@@ -131,6 +132,9 @@ def get_current_emoji_list(session):
         r.raise_for_status()
         response_json = r.json()
 
+        if not response_json['ok']:
+            raise Exception("Error with get current emoji_list %s" % (response_json))
+
         result.extend(map(lambda e: e["name"], response_json["emoji"]))
         if page >= response_json["paging"]["pages"]:
             break
@@ -152,7 +156,7 @@ def upload_emoji(session, emoji_name, filename):
     # Slack returns 200 OK even if upload fails, so check for status.
     response_json = r.json()
     if not response_json['ok']:
-        print("Error with uploading %s: %s" % (emoji_name, response_json))
+        raise Exception("Error with uploading %s: %s" % (emoji_name, response_json))
 
 
 if __name__ == '__main__':
